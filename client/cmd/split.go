@@ -47,7 +47,9 @@ var splitCmd = &cobra.Command{
 		0.333333333250 QUIL (Coin 0x3333)
 		0.333333333250 QUIL (Coin 0x4444)
 
-	Example - Split a coin into three parts using the specified amounts:
+		**Note:** Coin 0x1111 is the remainder.
+
+	Example - Split a coin into two parts using the specified amounts:
 		$ qclient token coins
 		1.000000000000 QUIL (Coin 0x1234)
 		$ qclient token split 0x1234 --parts 2 --part-amount 0.35
@@ -55,6 +57,8 @@ var splitCmd = &cobra.Command{
 		0.300000000000 QUIL (Coin 0x1111)
 		0.350000000000 QUIL (Coin 0x2222)
 		0.350000000000 QUIL (Coin 0x3333)
+
+		**Note:** Coin 0x1111 is the remainder.
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) < 3 && parts == 1 {
