@@ -100,75 +100,23 @@ var splitCmd = &cobra.Command{
 
 		// Split the coin into the user specified amounts
 		if parts == 1 {
-			conversionFactor, _ := new(big.Int).SetString("1DCD65000", 16)
-			inputAmount := new(big.Int)
-			for _, amt := range args[1:] {
-				amount, err := decimal.NewFromString(amt)
-				if err != nil {
-					fmt.Println("invalid amount, must be a decimal number like 0.02 or 2")
-					os.Exit(1)
-				}
-				amount = amount.Mul(decimal.NewFromBigInt(conversionFactor, 0))
-				inputAmount = inputAmount.Add(inputAmount, amount.BigInt())
-				amountBytes := amount.BigInt().FillBytes(make([]byte, 32))
-				amounts = append(amounts, amountBytes)
-				payload = append(payload, amountBytes...)
-			}
-
-			// Check if the user specified amounts sum to the total amount of the coin
-			if inputAmount.Cmp(totalAmount) != 0 {
-				fmt.Println("the specified amounts must sum to the total amount of the coin")
+			amounts, payload, err = Split(args[1:], amounts, payload, totalAmount)
+			if err != nil {
+				fmt.Println(err)
 				os.Exit(1)
 			}
 		}
 
 		// Split the coin into parts
 		if parts > 1 && partAmount == "" {
-			amount := new(big.Int).Div(totalAmount, big.NewInt(int64(parts)))
-			amountBytes := amount.FillBytes(make([]byte, 32))
-			for i := int64(0); i < int64(parts); i++ {
-				amounts = append(amounts, amountBytes)
-				payload = append(payload, amountBytes...)
-			}
-
-			// If there is a remainder, we need to add it as a separate amount
-			// because the amounts must sum to the original coin amount.
-			remainder := new(big.Int).Mod(totalAmount, big.NewInt(int64(parts)))
-			if remainder.Cmp(big.NewInt(0)) != 0 {
-				remainderBytes := remainder.FillBytes(make([]byte, 32))
-				amounts = append(amounts, remainderBytes)
-				payload = append(payload, remainderBytes...)
-			}
+			amounts, payload = SplitIntoParts(amounts, payload, totalAmount, parts)
 		}
 
 		// Split the coin into parts of the user specified amount
 		if parts > 1 && partAmount != "" {
-			conversionFactor, _ := new(big.Int).SetString("1DCD65000", 16)
-			amount, err := decimal.NewFromString(partAmount)
+			amounts, payload, err = SplitIntoPartsAmount(amounts, payload, totalAmount, parts, partAmount)
 			if err != nil {
-				fmt.Println("invalid amount, must be a decimal number like 0.02 or 2")
-				os.Exit(1)
-			}
-			amount = amount.Mul(decimal.NewFromBigInt(conversionFactor, 0))
-			inputAmount := new(big.Int).Mul(amount.BigInt(), big.NewInt(int64(parts)))
-			amountBytes := amount.BigInt().FillBytes(make([]byte, 32))
-			for i := int64(0); i < int64(parts); i++ {
-				amounts = append(amounts, amountBytes)
-				payload = append(payload, amountBytes...)
-			}
-
-			// If there is a remainder, we need to add it as a separate amount
-			// because the amounts must sum to the original coin amount.
-			remainder := new(big.Int).Sub(totalAmount, inputAmount)
-			if remainder.Cmp(big.NewInt(0)) != 0 {
-				remainderBytes := remainder.FillBytes(make([]byte, 32))
-				amounts = append(amounts, remainderBytes)
-				payload = append(payload, remainderBytes...)
-			}
-
-			// Check if the user specified amounts sum to the total amount of the coin
-			if new(big.Int).Add(inputAmount, new(big.Int).Abs(remainder)).Cmp(totalAmount) != 0 {
-				fmt.Println("the specified amounts must sum to the total amount of the coin")
+				fmt.Println(err)
 				os.Exit(1)
 			}
 		}
@@ -222,6 +170,77 @@ func init() {
 	splitCmd.Flags().IntVarP(&parts, "parts", "p", 1, "number of parts to split the coin into")
 	splitCmd.Flags().StringVarP(&partAmount, "part-amount", "a", "", "amount of each part")
 	tokenCmd.AddCommand(splitCmd)
+}
+
+func Split(args []string, amounts [][]byte, payload []byte, totalAmount *big.Int) ([][]byte, []byte, error) {
+	conversionFactor, _ := new(big.Int).SetString("1DCD65000", 16)
+	inputAmount := new(big.Int)
+	for _, amt := range args {
+		amount, err := decimal.NewFromString(amt)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid amount, must be a decimal number like 0.02 or 2")
+		}
+		amount = amount.Mul(decimal.NewFromBigInt(conversionFactor, 0))
+		inputAmount = inputAmount.Add(inputAmount, amount.BigInt())
+		amountBytes := amount.BigInt().FillBytes(make([]byte, 32))
+		amounts = append(amounts, amountBytes)
+		payload = append(payload, amountBytes...)
+	}
+
+	// Check if the user specified amounts sum to the total amount of the coin
+	if inputAmount.Cmp(totalAmount) != 0 {
+		return nil, nil, fmt.Errorf("the specified amounts must sum to the total amount of the coin")
+	}
+	return amounts, payload, nil
+}
+
+func SplitIntoParts(amounts [][]byte, payload []byte, totalAmount *big.Int, parts int) ([][]byte, []byte) {
+	amount := new(big.Int).Div(totalAmount, big.NewInt(int64(parts)))
+	amountBytes := amount.FillBytes(make([]byte, 32))
+	for i := int64(0); i < int64(parts); i++ {
+		amounts = append(amounts, amountBytes)
+		payload = append(payload, amountBytes...)
+	}
+
+	// If there is a remainder, we need to add it as a separate amount
+	// because the amounts must sum to the original coin amount.
+	remainder := new(big.Int).Mod(totalAmount, big.NewInt(int64(parts)))
+	if remainder.Cmp(big.NewInt(0)) != 0 {
+		remainderBytes := remainder.FillBytes(make([]byte, 32))
+		amounts = append(amounts, remainderBytes)
+		payload = append(payload, remainderBytes...)
+	}
+	return amounts, payload
+}
+
+func SplitIntoPartsAmount(amounts [][]byte, payload []byte, totalAmount *big.Int, parts int, partAmount string) ([][]byte, []byte, error) {
+	conversionFactor, _ := new(big.Int).SetString("1DCD65000", 16)
+	amount, err := decimal.NewFromString(partAmount)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid amount, must be a decimal number like 0.02 or 2")
+	}
+	amount = amount.Mul(decimal.NewFromBigInt(conversionFactor, 0))
+	inputAmount := new(big.Int).Mul(amount.BigInt(), big.NewInt(int64(parts)))
+	amountBytes := amount.BigInt().FillBytes(make([]byte, 32))
+	for i := int64(0); i < int64(parts); i++ {
+		amounts = append(amounts, amountBytes)
+		payload = append(payload, amountBytes...)
+	}
+
+	// If there is a remainder, we need to add it as a separate amount
+	// because the amounts must sum to the original coin amount.
+	remainder := new(big.Int).Sub(totalAmount, inputAmount)
+	if remainder.Cmp(big.NewInt(0)) != 0 {
+		remainderBytes := remainder.FillBytes(make([]byte, 32))
+		amounts = append(amounts, remainderBytes)
+		payload = append(payload, remainderBytes...)
+	}
+
+	// Check if the user specified amounts sum to the total amount of the coin
+	if new(big.Int).Add(inputAmount, new(big.Int).Abs(remainder)).Cmp(totalAmount) != 0 {
+		return nil, nil, fmt.Errorf("the specified amounts must sum to the total amount of the coin")
+	}
+	return amounts, payload, nil
 }
 
 func getCoinAmount(coinaddr []byte) *big.Int {
